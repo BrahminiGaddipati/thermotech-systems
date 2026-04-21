@@ -17,12 +17,13 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY;
 console.log('SUPABASE_URL:', SUPABASE_URL ? 'SET' : 'NOT SET');
 console.log('SUPABASE_KEY:', SUPABASE_KEY ? 'SET (length: ' + SUPABASE_KEY.length + ')' : 'NOT SET');
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error('CRITICAL ERROR: Supabase environment variables are not defined.');
-  process.exit(1);
-}
+const supabase = (SUPABASE_URL && SUPABASE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+if (!supabase) {
+  console.error('WARNING: Supabase client not initialized. Set SUPABASE_URL and SUPABASE_KEY.');
+}
 
 // Helper to map DB row to frontend employee object (_id compatibility)
 const mapEmployee = (emp) => ({
@@ -213,7 +214,13 @@ app.post('/api/ledger', async (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', supabase: !!SUPABASE_URL, timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    supabase_url_set: !!SUPABASE_URL,
+    supabase_key_set: !!SUPABASE_KEY,
+    supabase_initialized: !!supabase,
+    timestamp: new Date().toISOString() 
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
