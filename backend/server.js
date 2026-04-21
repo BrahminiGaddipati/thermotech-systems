@@ -14,6 +14,9 @@ const PORT = process.env.PORT || 5000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
+console.log('SUPABASE_URL:', SUPABASE_URL ? 'SET' : 'NOT SET');
+console.log('SUPABASE_KEY:', SUPABASE_KEY ? 'SET (length: ' + SUPABASE_KEY.length + ')' : 'NOT SET');
+
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('CRITICAL ERROR: Supabase environment variables are not defined.');
   process.exit(1);
@@ -208,6 +211,12 @@ app.post('/api/ledger', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', supabase: !!SUPABASE_URL, timestamp: new Date().toISOString() });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Supabase connected to: ${SUPABASE_URL}`);
 });
