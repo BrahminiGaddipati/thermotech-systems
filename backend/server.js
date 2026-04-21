@@ -16,9 +16,17 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI;
 
+if (!MONGODB_URI) {
+  console.error('CRITICAL ERROR: MONGODB_URI environment variable is not defined.');
+  process.exit(1);
+}
+
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('Successfully connected to MongoDB'))
+  .catch(err => {
+    console.error('CRITICAL ERROR: MongoDB connection failed:', err.message);
+    process.exit(1);
+  });
 
 // Employees
 app.get('/api/employees', async (req, res) => {
