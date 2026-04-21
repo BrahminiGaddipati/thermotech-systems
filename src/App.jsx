@@ -28,6 +28,7 @@ import AttendanceTracker from './components/AttendanceTracker';
 import PayrollManager from './components/PayrollManager';
 import MonthlyReport from './components/MonthlyReport';
 import Login from './components/Login';
+import MigrationTool from './components/MigrationTool';
 
 const Dashboard = ({ employees, attendance, ledger }) => {
   const stats = useMemo(() => {
@@ -138,6 +139,8 @@ function App() {
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [ledger, setLedger] = useState({});
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -150,29 +153,31 @@ function App() {
         setEmployees(empData);
         setAttendance(attData);
         setLedger(ledData);
+        setDataLoaded(true);
       } catch (err) {
         console.error('Error fetching data from MongoDB:', err);
         // Fallback to local storage if API fails
         setEmployees(getFromStorage(STORAGE_KEYS.EMPLOYEES));
         setAttendance(getFromStorage(STORAGE_KEYS.ATTENDANCE, {}));
         setLedger(getFromStorage(STORAGE_KEYS.LEDGER, {}));
+        setDataLoaded(true);
       }
     };
     if (isLoggedIn) fetchData();
-  }, [isLoggedIn]);
+  }, [isLoggedIn, refreshTrigger]);
 
   // Sync state to storage
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.EMPLOYEES, employees);
-  }, [employees]);
+    if (dataLoaded) saveToStorage(STORAGE_KEYS.EMPLOYEES, employees);
+  }, [employees, dataLoaded]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.ATTENDANCE, attendance);
-  }, [attendance]);
+    if (dataLoaded) saveToStorage(STORAGE_KEYS.ATTENDANCE, attendance);
+  }, [attendance, dataLoaded]);
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.LEDGER, ledger);
-  }, [ledger]);
+    if (dataLoaded) saveToStorage(STORAGE_KEYS.LEDGER, ledger);
+  }, [ledger, dataLoaded]);
 
   const handleLogin = () => {
     setIsLoggedIn(true);
@@ -205,7 +210,17 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard employees={employees} attendance={attendance} ledger={ledger} />;
+        return (
+          <>
+            <MigrationTool 
+              employees={employees} 
+              attendance={attendance} 
+              ledger={ledger} 
+              onComplete={() => setRefreshTrigger(t => t + 1)}
+            />
+            <Dashboard employees={employees} attendance={attendance} ledger={ledger} />
+          </>
+        );
       case 'employees':
         return <EmployeeManager employees={employees} setEmployees={setEmployees} />;
       case 'attendance':

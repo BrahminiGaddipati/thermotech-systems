@@ -1,10 +1,7 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import Employee from './models/Employee.js';
-import Attendance from './models/Attendance.js';
-import Ledger from './models/Ledger.js';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -14,35 +11,64 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-if (!MONGODB_URI) {
-  console.error('CRITICAL ERROR: MONGODB_URI environment variable is not defined.');
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('CRITICAL ERROR: Supabase environment variables are not defined.');
   process.exit(1);
 }
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Successfully connected to MongoDB'))
-  .catch(err => {
-    console.error('CRITICAL ERROR: MongoDB connection failed:', err.message);
-    process.exit(1);
-  });
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Helper to map DB row to frontend employee object (_id compatibility)
+const mapEmployee = (emp) => ({
+  ...emp,
+  _id: emp.id,
+  dailyWage: Number(emp.daily_wage),
+  employeeId: emp.employee_id,
+  joiningDate: emp.joining_date
+});
 
 // Employees
 app.get('/api/employees', async (req, res) => {
   try {
-    const employees = await Employee.find();
-    res.json(employees);
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*')
+      .order('name');
+    
+    if (error) throw error;
+    res.json(data.map(mapEmployee));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
 app.post('/api/employees', async (req, res) => {
-  const employee = new Employee(req.body);
   try {
-    const newEmployee = await employee.save();
-    res.status(201).json(newEmployee);
+    const insertData = {
+      name: req.body.name,
+      designation: req.body.designation,
+      daily_wage: req.body.dailyWage,
+      phone: req.body.phone,
+      photo: req.body.photo,
+      joining_date: req.body.joiningDate
+    };
+
+    // Only include employee_id if it was explicitly provided (e.g. legacy or manual overwrite)
+    if (req.body.employeeId) {
+      insertData.employee_id = req.body.employeeId;
+    }
+
+    const { data, error } = await supabase
+      .from('employees')
+      .insert(insertData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    res.status(201).json(mapEmployee(data));
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -50,8 +76,23 @@ app.post('/api/employees', async (req, res) => {
 
 app.put('/api/employees/:id', async (req, res) => {
   try {
-    const updatedEmployee = await Employee.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updatedEmployee);
+    const { data, error } = await supabase
+      .from('employees')
+      .update({
+        employee_id: req.body.employeeId,
+        name: req.body.name,
+        designation: req.body.designation,
+        daily_wage: req.body.dailyWage,
+        phone: req.body.phone,
+        photo: req.body.photo,
+        joining_date: req.body.joiningDate
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    res.json(mapEmployee(data));
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -59,7 +100,12 @@ app.put('/api/employees/:id', async (req, res) => {
 
 app.delete('/api/employees/:id', async (req, res) => {
   try {
-    await Employee.findByIdAndDelete(req.params.id);
+    const { error } = await supabase
+      .from('employees')
+      .delete()
+      .eq('id', req.params.id);
+    
+    if (error) throw error;
     res.json({ message: 'Employee deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -69,13 +115,20 @@ app.delete('/api/employees/:id', async (req, res) => {
 // Attendance
 app.get('/api/attendance', async (req, res) => {
   try {
-    const attendance = await Attendance.find();
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*');
+    
+    if (error) throw error;
+
+    // Convert flattened rows back to Map structure
     const result = {};
-    attendance.forEach(a => {
-      if (a.date) {
-        result[a.date] = a.attendance ? Object.fromEntries(a.attendance) : {};
-      }
+    data.forEach(row => {
+      const dateStr = row.date;
+      if (!result[dateStr]) result[dateStr] = {};
+      result[dateStr][row.employee_id] = row.status;
     });
+    
     res.json(result);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -85,15 +138,19 @@ app.get('/api/attendance', async (req, res) => {
 app.post('/api/attendance', async (req, res) => {
   const { date, attendance } = req.body;
   try {
-    let record = await Attendance.findOne({ date });
-    if (record) {
-      record.attendance = attendance;
-      await record.save();
-    } else {
-      record = new Attendance({ date, attendance });
-      await record.save();
-    }
-    res.status(201).json(record);
+    const rows = Object.entries(attendance).map(([empId, status]) => ({
+      date,
+      employee_id: empId,
+      status
+    }));
+
+    const { data, error } = await supabase
+      .from('attendance')
+      .upsert(rows, { onConflict: 'date,employee_id' })
+      .select();
+    
+    if (error) throw error;
+    res.status(201).json(data);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -102,11 +159,20 @@ app.post('/api/attendance', async (req, res) => {
 // Ledger
 app.get('/api/ledger', async (req, res) => {
   try {
-    const ledger = await Ledger.find();
+    const { data, error } = await supabase
+      .from('ledgers')
+      .select('*');
+    
+    if (error) throw error;
+
     const result = {};
-    ledger.forEach(l => {
-      if (!result[l.employeeId]) result[l.employeeId] = [];
-      result[l.employeeId].push(l);
+    data.forEach(row => {
+      if (!result[row.employee_id]) result[row.employee_id] = [];
+      result[row.employee_id].push({
+        ...row,
+        _id: row.id,
+        employeeId: row.employee_id
+      });
     });
     res.json(result);
   } catch (err) {
@@ -117,28 +183,26 @@ app.get('/api/ledger', async (req, res) => {
 app.post('/api/ledger', async (req, res) => {
   const { employeeId, date, amount, hours, type, note } = req.body;
   try {
-    // For manual entries in PayrollManager (which creates new entries)
-    // or AttendanceTracker (which updates daily entries)
-    if (req.body.id) {
-        // This is a new unique entry from PayrollManager
-        const newEntry = new Ledger(req.body);
-        await newEntry.save();
-        return res.status(201).json(newEntry);
-    }
-
-    // AttendanceTracker logic: update or create entry for specific date/employee
-    let entry = await Ledger.findOne({ employeeId, date });
-    if (entry) {
-      if (amount !== undefined) entry.amount = amount;
-      if (hours !== undefined) entry.hours = hours;
-      if (type !== undefined) entry.type = type;
-      if (note !== undefined) entry.note = note;
-      await entry.save();
-    } else {
-      entry = new Ledger({ employeeId, date, amount, hours, type: type || 'advance', note });
-      await entry.save();
-    }
-    res.status(201).json(entry);
+    // Standard Ledger entry
+    const { data, error } = await supabase
+      .from('ledgers')
+      .upsert({
+        employee_id: employeeId,
+        date,
+        amount: Number(amount) || 0,
+        hours: Number(hours) || 0,
+        type: type || 'advance',
+        note
+      }, { onConflict: 'employee_id,date,type' }) // Assuming unique per day per type for sync safety
+      .select()
+      .single();
+    
+    if (error) throw error;
+    res.status(201).json({
+      ...data,
+      _id: data.id,
+      employeeId: data.employee_id
+    });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

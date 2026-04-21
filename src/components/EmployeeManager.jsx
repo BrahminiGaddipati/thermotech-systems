@@ -41,8 +41,8 @@ const EmployeeManager = ({ employees, setEmployees }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.dailyWage || !formData.designation || !formData.employeeId) {
-      alert('Please fill in all required fields (ID, Name, Designation, Wage)');
+    if (!formData.name || !formData.dailyWage || !formData.designation) {
+      alert('Please fill in all required fields (Name, Designation, Wage)');
       return;
     }
 
@@ -98,16 +98,17 @@ const EmployeeManager = ({ employees, setEmployees }) => {
       {showForm && (
         <div className="card" style={{ marginBottom: '2rem', maxWidth: '600px' }}>
           <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label>Employee ID</label>
-              <input 
-                type="text" 
-                placeholder="e.g. TS-005"
-                value={formData.employeeId}
-                onChange={(e) => setFormData({...formData, employeeId: e.target.value.toUpperCase()})}
-                required
-              />
-            </div>
+            {editingId && (
+              <div className="form-group">
+                <label>Employee ID</label>
+                <input 
+                  type="text" 
+                  value={formData.employeeId}
+                  disabled
+                  style={{ background: 'var(--bg-card)', cursor: 'not-allowed' }}
+                />
+              </div>
+            )}
 
             <div className="form-group">
               <label>Full Name</label>

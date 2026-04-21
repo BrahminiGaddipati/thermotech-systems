@@ -1,4 +1,15 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const getApiBase = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl) return 'http://localhost:5000/api';
+  
+  // If the URL doesn't start with http/https, add https://
+  if (!envUrl.startsWith('http')) {
+    return `https://${envUrl}`;
+  }
+  return envUrl;
+};
+
+const API_BASE = getApiBase();
 
 export const api = {
   // Employees
